@@ -1,0 +1,216 @@
+
+<!doctype html>
+<html lang="uk">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>СР «Детектування об’єктів YOLO11» — покрокова інструкція</title>
+  <style>
+    :root{
+      --bg:#0f172a; --ink:#e5e7eb; --muted:#94a3b8; --panel:#111827; --border:#1f2937; --accent:#22c55e; --accent2:#60a5fa;
+      --code:#0b1220;
+    }
+    *{box-sizing:border-box}
+    body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.6 system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,Noto Sans,sans-serif}
+    .container{max-width:1000px;margin:0 auto;padding:24px}
+    header{border:1px solid var(--border);border-radius:16px;padding:22px;background:linear-gradient(180deg,rgba(34,197,94,.10),rgba(96,165,250,.08))}
+    h1{margin:0 0 6px 0;font-size:clamp(1.5rem,1.8rem,2rem)}
+    h2{margin:28px 0 10px;font-size:1.35rem}
+    h3{margin:18px 0 8px;color:var(--accent)}
+    p,li{color:var(--ink)}
+    .muted{color:var(--muted)}
+    .panel{background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:16px}
+    pre{background:var(--code);border:1px solid var(--border);border-radius:12px;padding:12px;overflow:auto}
+    code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.95rem}
+    .note{border-left:3px solid var(--accent2);background:rgba(96,165,250,.06);padding:10px 12px;border-radius:6px}
+    .badge{display:inline-block;padding:2px 8px;border-radius:999px;border:1px solid rgba(255,255,255,.2);font-size:.8rem;margin-left:6px}
+    .checklist input{accent-color:var(--accent)}
+    a{color:#93c5fd}
+    .toc a{text-decoration:none}
+    .toc a:hover{text-decoration:underline}
+  </style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <h1>Самостійна робота: детектування об’єктів за допомогою YOLO11</h1>
+    <p class="muted">Ultralytics YOLO11 · Colab або локально · Анотація власних даних · Train → Val → Predict → Export</p>
+    <p class="note">Орієнтуємося на <strong>останню стабільну лінійку Ultralytics — YOLO11</strong> та офіційну структуру датасету у форматі YOLO.</p>
+  </header>
+
+  <section class="panel toc">
+    <h2>Зміст</h2>
+    <ol>
+      <li><a href="#sec-1">Безкоштовний запуск (Colab/локально)</a></li>
+      <li><a href="#sec0">Передумови та очікувані артефакти</a></li>
+      <li><a href="#sec1">Структура датасету у форматі YOLO</a></li>
+      <li><a href="#sec2">Анотація <em>власних</em> даних у Label Studio (BBox)</a></li>
+      <li><a href="#sec3">Файл <code>dataset.yaml</code> — приклад і валідність</a></li>
+      <li><a href="#sec4">Підготовка середовища</a></li>
+      <li><a href="#sec5">«Санті-чек» на COCO8 (опційно)</a></li>
+      <li><a href="#sec6">Навчання на своїх даних (train)</a></li>
+      <li><a href="#sec7">Валідація та метрики (val)</a></li>
+      <li><a href="#sec8">Обов’язкове тестування на власних зображеннях (predict)</a></li>
+      <li><a href="#sec9">Тюнінг і підсилення якості</a></li>
+      <li><a href="#sec10">Експорт моделі (onnx тощо)</a></li>
+      <li><a href="#sec11">Що здати (чек‑лист)</a></li>
+      <li><a href="#sec12">Посилання на документацію</a></li>
+    </ol>
+  </section>
+
+  <section id="sec-1">
+    <h2>-1) Безкоштовний запуск</h2>
+    <ul>
+      <li><strong>Google Colab</strong>: достатньо акаунта; можливо отримати GPU. Підійде й CPU.</li>
+      <li><strong>Локально</strong>: Python ≥ 3.9, <code>pip install ultralytics</code>. Перевірка: <code>yolo checks</code>.</li>
+    </ul>
+  </section>
+
+  <section id="sec0">
+    <h2>0) Передумови та очікувані артефакти</h2>
+    <ul>
+      <li>Набір <strong>власних</strong> зображень (від 50–300) по темі; бажано різноманітні сцени й ракурси.</li>
+      <li>Під час здачі: <em>скрипт/ноутбук</em>, <em>dataset.yaml</em>, метрики, 3–5 прикладів інференсу на <strong>нових</strong> зображеннях, за бажання — експорт у ONNX.</li>
+    </ul>
+  </section>
+
+  <section id="sec1">
+    <h2>1) Структура датасету у форматі YOLO</h2>
+<pre><code>dataset/
+  images/
+    train/   # *.jpg|*.png
+    val/
+    test/    # опційно
+  labels/
+    train/   # *.txt — один рядок на об’єкт: class x_center y_center width height (усе в [0,1])
+    val/
+    test/
+dataset.yaml
+</code></pre>
+    <p>Файли анотацій <code>.txt</code> з таким самим базовим ім’ям, як у відповідного зображення (наприклад, <code>img001.jpg</code> → <code>img001.txt</code>).</p>
+  </section>
+
+  <section id="sec2">
+    <h2>2) Анотація <em>власних</em> даних у Label Studio (BBox)</h2>
+    <ol>
+      <li>Встановіть Label Studio (локально або docker) та запустіть інтерфейс.</li>
+      <li>Створіть проєкт «Object Detection» з одним або кількома класами (наприклад, <code>&lt;RectangleLabels&gt;</code> з категоріями).</li>
+      <li>Імпортуйте свої зображення, розмічайте прямокутниками (BBox).</li>
+      <li><strong>Експорт</strong>: у менеджері даних оберіть <em>Export</em> → формат <em>YOLO (Ultralytics)</em> або, якщо недоступно, експортуйте в JSON і сконвертуйте в YOLO-конвертором.</li>
+      <li>Розпакуйте експорт у структуру, наведену вище (<code>images/</code> та <code>labels/</code> для кожного спліту).</li>
+    </ol>
+    <p class="muted">За потреби можна використати CVAT: експортуйте у форматі <em>Ultralytics YOLO (Detection)</em> і розкладіть файли за сплітами.</p>
+  </section>
+
+  <section id="sec3">
+    <h2>3) <code>dataset.yaml</code> — приклад і валідність</h2>
+<pre><code># dataset.yaml (приклад)
+path: /content/dataset           # кореневий шлях до датасету
+train: images/train
+val: images/val
+test: images/test                # опційно
+
+names:
+  0: клас_0
+  1: клас_1
+  # 2: клас_2 ...
+</code></pre>
+    <p>Переконайтесь, що <code>names</code> відповідають індексам класів у ваших <code>.txt</code>. Шляхи мають існувати.</p>
+  </section>
+
+  <section id="sec4">
+    <h2>4) Підготовка середовища</h2>
+    <h3>Colab</h3>
+<pre><code>!pip install -q ultralytics
+from ultralytics import YOLO
+import torch; print("CUDA:", torch.cuda.is_available())</code></pre>
+    <h3>Локально</h3>
+<pre><code>pip install ultralytics
+yolo checks</code></pre>
+  </section>
+
+  <section id="sec5">
+    <h2>5) «Санті-чек» на COCO8 (опційно, 2–3 хв)</h2>
+<pre><code># Train
+yolo train model=yolo11n.pt data=coco8.yaml epochs=3 imgsz=640
+# Predict
+yolo predict model=yolo11n.pt source=path/to/image.jpg</code></pre>
+    <p class="muted">Це дозволяє швидко перевірити працездатність пайплайна перед навчанням на своїх даних.</p>
+  </section>
+
+  <section id="sec6">
+    <h2>6) Навчання на своїх даних (train)</h2>
+<pre><code># CLI
+yolo train model=yolo11n.pt data=dataset.yaml epochs=30 imgsz=640 batch=16 patience=10 device=auto
+
+# Python
+from ultralytics import YOLO
+model = YOLO("yolo11n.pt")
+model.train(data="dataset.yaml", epochs=30, imgsz=640, batch=16, patience=10, device="auto")</code></pre>
+    <p>Результати (ваги, графіки) зберігаються у <code>runs/detect/train*</code>.</p>
+  </section>
+
+  <section id="sec7">
+    <h2>7) Валідація та метрики (val)</h2>
+<pre><code>yolo val model=runs/detect/train/weights/best.pt data=dataset.yaml</code></pre>
+    <p>Зніміть <strong>mAP@0.50</strong>, <strong>mAP@0.50:0.95</strong>, Precision/Recall, PR-криві, Confusion Matrix — додайте у звіт.</p>
+  </section>
+
+  <section id="sec8">
+    <h2>8) Обов’язкове тестування на <em>власних</em> зображеннях (predict)</h2>
+<pre><code># Підготуйте нові (раніше не бачені) зображення
+mkdir -p my_samples
+# ...покладіть 5–10 зображень всередину...
+
+# Інференс і збереження візуалізацій
+yolo predict model=runs/detect/train/weights/best.pt source=my_samples/ conf=0.25 save=True</code></pre>
+    <p>Додайте до звіту 3–5 прикладів зображень із намальованими боксами та впевненістю.</p>
+  </section>
+
+  <section id="sec9">
+    <h2>9) Тюнінг і підсилення якості</h2>
+    <ul>
+      <li>Аугментації за замовчуванням увімкнено; можна збільшити епохи, batch, налаштувати LR.</li>
+      <li>Спробуйте інші ваги: <code>yolo11s/m/l/x.pt</code> — компроміс точність/швидкість.</li>
+      <li>Баланс класів і якість розмітки суттєво впливають на mAP.</li>
+    </ul>
+  </section>
+
+  <section id="sec10">
+    <h2>10) Експорт моделі</h2>
+<pre><code># приклад у ONNX
+yolo export model=runs/detect/train/weights/best.pt format=onnx
+
+# далі можна виконати інференс і на експортованій моделі
+yolo predict model=runs/detect/train/weights/best.onnx source=my_samples/</code></pre>
+  </section>
+
+  <section id="sec11" class="panel">
+    <h2>11) Що здати (чек‑лист)</h2>
+    <div class="checklist">
+      <p><label><input type="checkbox" disabled> Нотбук/скрипт: підготовка → train → val → predict → export.</label></p>
+      <p><label><input type="checkbox" disabled> <code>dataset.yaml</code> і структура <code>images/</code>, <code>labels/</code> (скрін або листинг).</label></p>
+      <p><label><input type="checkbox" disabled> Метрики з <code>runs/detect/train*</code> (mAP, PR‑криві, Confusion Matrix).</label></p>
+      <p><label><input type="checkbox" disabled> 3–5 прикладів інференсу на <strong>власних</strong> зображеннях із боксами.</label></p>
+      <p><label><input type="checkbox" disabled> (Опційно) Експортований ONNX та короткий сценарій застосування.</label></p>
+    </div>
+  </section>
+
+  <section id="sec12">
+    <h2>12) Посилання на документацію</h2>
+    <ul>
+      <li>Ultralytics YOLO11 — огляд: <a href="https://docs.ultralytics.com/models/yolo11/" target="_blank" rel="noopener">docs.ultralytics.com/models/yolo11/</a></li>
+      <li>CLI: <a href="https://docs.ultralytics.com/usage/cli/" target="_blank" rel="noopener">docs.ultralytics.com/usage/cli/</a></li>
+      <li>Train/Val/Predict: <a href="https://docs.ultralytics.com/modes/train/" target="_blank" rel="noopener">/modes/train/</a> · <a href="https://docs.ultralytics.com/modes/predict/" target="_blank" rel="noopener">/modes/predict/</a> · <a href="https://docs.ultralytics.com/modes/export/" target="_blank" rel="noopener">/modes/export/</a></li>
+      <li>Формати датасетів (Detect): <a href="https://docs.ultralytics.com/datasets/detect/" target="_blank" rel="noopener">/datasets/detect/</a> · COCO8: <a href="https://docs.ultralytics.com/datasets/detect/coco8/" target="_blank" rel="noopener">/datasets/detect/coco8/</a></li>
+      <li>Label Studio — експорт у YOLO: <a href="https://labelstud.io/integrations/machine-learning/yolo/" target="_blank" rel="noopener">labelstud.io/integrations/machine-learning/yolo/</a></li>
+      <li>CVAT — формати Ultralytics YOLO: <a href="https://docs.cvat.ai/docs/manual/advanced/formats/format-yolo-ultralytics/" target="_blank" rel="noopener">docs.cvat.ai/.../format-yolo-ultralytics/</a></li>
+    </ul>
+  </section>
+
+  <footer class="muted" style="margin-top:26px">
+    <p>© Навчальні матеріали з дисципліни «Глибинне навчання». Версія сторінки: 1.0 (YOLO11).</p>
+  </footer>
+</div>
+</body>
+</html>
